@@ -19,7 +19,7 @@ unk = '<UNK>'
 class RNN(nn.Module):
     def __init__(self, input_dim, h):  # Add relevant parameters
         super(RNN, self).__init__()
-        self.h = h
+        self.h = h  
         self.numOfLayer = 1
         self.rnn = nn.RNN(input_dim, h, self.numOfLayer, nonlinearity='tanh')
         self.W = nn.Linear(h, 5)
@@ -31,29 +31,33 @@ class RNN(nn.Module):
 
     def forward(self, inputs):
         # [to fill] obtain hidden layer representation (https://pytorch.org/docs/stable/generated/torch.nn.RNN.html)
-        _, hidden = 
+        outputs, hidden = self.rnn(inputs)
         # [to fill] obtain output layer representations
-
-        # [to fill] sum over output 
-
+        output_layer = self.W(outputs)
+        # [to fill] sum over output  
+        summed_output = torch.sum(output_layer, dim=0)
         # [to fill] obtain probability dist.
-
+        predicted_vector = self.softmax(summed_output)
         return predicted_vector
 
-
-def load_data(train_data, val_data):
+def load_data(train_data, val_data, test_data):
     with open(train_data) as training_f:
         training = json.load(training_f)
     with open(val_data) as valid_f:
         validation = json.load(valid_f)
+    with open(test_data) as test_f:
+        test = json.load(test_f)
 
     tra = []
     val = []
+    tes = []
     for elt in training:
         tra.append((elt["text"].split(),int(elt["stars"]-1)))
     for elt in validation:
         val.append((elt["text"].split(),int(elt["stars"]-1)))
-    return tra, val
+    for elt in test:
+        tes.append((elt["text"].split(),int(elt["stars"]-1)))
+    return tra, val, tes
 
 
 if __name__ == "__main__":
@@ -63,11 +67,13 @@ if __name__ == "__main__":
     parser.add_argument("--train_data", required = True, help = "path to training data")
     parser.add_argument("--val_data", required = True, help = "path to validation data")
     parser.add_argument("--test_data", default = "to fill", help = "path to test data")
+    parser.add_argument("--output_file", default="rnn_predictions.txt", help="file to save predictions")
+    parser.add_argument("--load_model", default=None, help="path to load saved model")
     parser.add_argument('--do_train', action='store_true')
     args = parser.parse_args()
 
     print("========== Loading data ==========")
-    train_data, valid_data = load_data(args.train_data, args.val_data) # X_data is a list of pairs (document, y); y in {0,1,2,3,4}
+    train_data, valid_data, test_data = load_data(args.train_data, args.val_data, args.test_data) # X_data is a list of pairs (document, y); y in {0,1,2,3,4}
 
     # Think about the type of function that an RNN describes. To apply it, you will need to convert the text data into vector representations.
     # Further, think about where the vectors will come from. There are 3 reasonable choices:
@@ -78,7 +84,7 @@ if __name__ == "__main__":
 
     print("========== Vectorizing data ==========")
     model = RNN(50, args.hidden_dim)  # Fill in parameters
-    # optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+    #optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     optimizer = optim.Adam(model.parameters(), lr=0.01)
     word_embedding = pickle.load(open('./word_embedding.pkl', 'rb'))
 
@@ -93,7 +99,6 @@ if __name__ == "__main__":
         model.train()
         # You will need further code to operationalize training, ffnn.py may be helpful
         print("Training started for epoch {}".format(epoch + 1))
-        train_data = train_data
         correct = 0
         total = 0
         minibatch_size = 16
@@ -125,7 +130,7 @@ if __name__ == "__main__":
                 predicted_label = torch.argmax(output)
 
                 correct += int(predicted_label == gold_label)
-                # print(predicted_label, gold_label)
+                #print(predicted_label, gold_label)
                 total += 1
                 if loss is None:
                     loss = example_loss
@@ -140,7 +145,7 @@ if __name__ == "__main__":
         print(loss_total/loss_count)
         print("Training completed for epoch {}".format(epoch + 1))
         print("Training accuracy for epoch {}: {}".format(epoch + 1, correct / total))
-        trainning_accuracy = correct/total
+        training_accuracy = correct/total
 
 
         model.eval()
@@ -161,23 +166,77 @@ if __name__ == "__main__":
             predicted_label = torch.argmax(output)
             correct += int(predicted_label == gold_label)
             total += 1
-            # print(predicted_label, gold_label)
+            #print(predicted_label, gold_label)
         print("Validation completed for epoch {}".format(epoch + 1))
         print("Validation accuracy for epoch {}: {}".format(epoch + 1, correct / total))
         validation_accuracy = correct/total
 
-        if validation_accuracy < last_validation_accuracy and trainning_accuracy > last_train_accuracy:
+        if validation_accuracy < last_validation_accuracy and training_accuracy > last_train_accuracy:
             stopping_condition=True
             print("Training done to avoid overfitting!")
             print("Best validation accuracy is:", last_validation_accuracy)
         else:
             last_validation_accuracy = validation_accuracy
-            last_train_accuracy = trainning_accuracy
+            last_train_accuracy = training_accuracy
+            torch.save(model.state_dict(), "./rnn_model.pth")
+            print("Model saved!")
 
         epoch += 1
 
+    if args.test_data:
+        print("========== Testing the model ==========")
 
+        # Load saved model if specified
+        if args.load_model:
+            model.load_state_dict(torch.load(args.load_model))
+            print(f"Loaded model from {args.load_model}")
+        else:
+             model.load_state_dict(torch.load("./rnn_model.pth"))
 
-    # You may find it beneficial to keep track of training accuracy or training loss;
+        # Load test data
+        with open(args.test_data) as test_f:
+            test_json = json.load(test_f)
 
-    # Think about how to update the model and what this entails. Consider ffnn.py and the PyTorch documentation for guidance
+        test_data = []
+        for elt in test_json:
+            test_data.append((elt["text"].split(), int(elt["stars"]-1)))
+
+        # Test the model
+        model.eval()
+        correct = 0
+        total = 0
+        predictions = []
+
+        with torch.no_grad():  # No need to track gradients during testing
+            for input_words, gold_label in tqdm(test_data):
+                input_words = " ".join(input_words)
+                input_words = input_words.translate(input_words.maketrans("", "", string.punctuation)).split()
+
+                # Handle empty input
+                if len(input_words) == 0:
+                    predicted_label = 2  # Default to middle rating
+                    predictions.append((predicted_label + 1, gold_label + 1))
+                    continue
+
+                # Convert to vectors
+                vectors = [word_embedding[i.lower()] if i.lower() in word_embedding.keys() else word_embedding['unk'] for i in input_words]
+                vectors = torch.tensor(vectors).view(len(vectors), 1, -1)
+
+                # Get prediction
+                output = model(vectors)
+                predicted_label = torch.argmax(output).item()
+                predictions.append((predicted_label + 1, gold_label + 1))  # Convert back to 1-5 scale
+                correct += int(predicted_label == gold_label)
+                total += 1
+
+        # Calculate accuracy
+        test_accuracy = correct / total
+        print(f"Test accuracy: {test_accuracy:.4f}")
+
+        # Save predictions
+        with open(args.output_file, 'w') as f:
+            f.write("predicted_rating,true_rating\n")
+            for pred, gold in predictions:
+                f.write(f"{pred},{gold}\n")
+
+        print(f"Predictions saved to {args.output_file}")
