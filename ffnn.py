@@ -24,7 +24,7 @@ class FFNN(nn.Module):
         self.output_dim = 5
         self.W2 = nn.Linear(h, self.output_dim) 
 
-        self.softmax = nn.LogSoftmax() # The softmax function that converts vectors into probability distributions; computes log probabilities for computational benefits
+        self.softmax = nn.LogSoftmax(dim=0) # The softmax function that converts vectors into probability distributions; computes log probabilities for computational benefits
         self.loss = nn.NLLLoss() # The cross-entropy/negative log likelihood loss taught in class
 
     def compute_Loss(self, predicted_vector, gold_label):
