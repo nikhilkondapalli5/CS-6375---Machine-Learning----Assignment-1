@@ -1,6 +1,6 @@
 # Sentiment Analysis with FFNN and RNN
 
-This project implements Feed-Forward Neural Networks (FFNN) and Recurrent Neural Networks (RNN) for sentiment analysis on text data.
+This project implements Feed-Forward Neural Networks (FFNN) and Recurrent Neural Networks (RNN) for sentiment analysis on YELP reviews.
 
 ## Setup
 
